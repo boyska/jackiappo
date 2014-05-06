@@ -1,4 +1,4 @@
-binaries=jackiappo check_conf
+binaries=jackiappo check_conf metro
 all: $(binaries)
 
 CCOPTS=-Wall -ansi
@@ -18,7 +18,7 @@ config_parse.o: config_parse.c
 #	$(CC) -c -o $@ $^ `pkg-config --cflags --libs jack`
 
 clean:
-	rm -f $(OBJECTS) $(binaries)
+	rm -f $(OBJECTS) $(binaries) metro.o
 
 
 check_conf: config_parse.o run_config.o
@@ -27,3 +27,5 @@ check_conf: config_parse.o run_config.o
 run_config.o: run_config.c
 	$(CC) -c -o $@ `pkg-config --cflags --libs libconfig` $<
 
+metro: metro.c
+	$(CC) -o $@ $^ `pkg-config --cflags --libs jack` -lm
