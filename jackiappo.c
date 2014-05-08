@@ -24,6 +24,7 @@
 #include <string.h>
 #include <getopt.h>
 #include <jack/jack.h>
+#include "jackiappo.h"
 #include "config_parse.h"
 
 #ifndef CLIENT_NAME
@@ -32,14 +33,10 @@
 #define SHOW_ALIASES 0
 #define SHOW_CON 0
 
-static void show_version (void);
-static void show_usage (void);
+struct passaround *globals;
 
 /* Yes, there are so much globals. Me suck. So what? */
-jack_client_t *client;
-char *to_connect;
 char *my_name;
-config_t *cfg;
 
 void do_port_action(const char *port_name) {
 	/* This function do what's needed */
@@ -49,29 +46,27 @@ void do_port_action(const char *port_name) {
 	const char* from_port, *to_port;
 	for(rules_i = 0;
 			rules_i <
-			config_setting_length(config_lookup(cfg, "newports"));
+			config_setting_length(config_lookup(globals->cfg, "newports"));
 			rules_i++) {
 		asprintf(&from_varname, "newports.[%u].from.name", rules_i);
-		from_port = config_setting_get_string(config_lookup(cfg, from_varname));
+		from_port = config_setting_get_string(config_lookup(globals->cfg, from_varname));
 		free(from_varname);
 
 		if(strcmp(from_port, port_name) == 0) {
 			/* Yay! connect */
 			asprintf(&to_varname, "newports.[%u].to.name", rules_i);
-			to_port = config_setting_get_string(config_lookup(cfg, to_varname));
+			to_port = config_setting_get_string(config_lookup(globals->cfg, to_varname));
 			free(to_varname);
 
 			fprintf(stderr, "Connecting %s and %s\n", port_name, to_port);
 			fflush(stderr);
-			errorcode = jack_connect(client, port_name, to_port);
-			free((void*)to_port);
+			errorcode = jack_connect(globals->client, port_name, to_port);
 			if(errorcode) {
 				fprintf(stderr, "Error connecting: %d\n",
 						errorcode);
 				fflush(stderr);
 			}
 		}
-		free((void*)from_port);
 	}
 }
 
@@ -91,11 +86,11 @@ void on_port_reg(jack_port_id_t port_id, int registering, void *arg) {
 	if(!registering) {
 		return;
 	} else {
-		port = jack_port_by_id(client, port_id);
+		port = jack_port_by_id(globals->client, port_id);
 		name = jack_port_name(port);
-		to_connect = calloc(strlen(name)+1, sizeof(char));
-		strncpy(to_connect, name, strlen(name)+1);
-		fprintf(stderr, "To connect: [%s]\n", to_connect);
+		globals->to_connect = calloc(strlen(name)+1, sizeof(char));
+		strncpy(globals->to_connect, name, strlen(name)+1);
+		fprintf(stderr, "To connect: [%s]\n", globals->to_connect);
 		fflush(stderr);
 	}
 }
@@ -103,7 +98,7 @@ void on_port_reg(jack_port_id_t port_id, int registering, void *arg) {
 void show_ports() {
 	const char **ports;
 	int i;
-	ports = jack_get_ports (client, NULL, NULL, 0);
+	ports = jack_get_ports (globals->client, NULL, NULL, 0);
 	if (!ports)
 		return;
 
@@ -125,7 +120,6 @@ main (int argc, char *argv[])
 	int option_index;
 	char *server_name = NULL;
 	char *config_fname = NULL;
-	struct timespec sleep_spec;
 
 	struct option long_options[] = {
 	    { "server", 1, 0, 's' },
@@ -142,6 +136,7 @@ main (int argc, char *argv[])
 		my_name ++;
 	}
 
+	globals = malloc(sizeof(struct passaround));
 	while ((c = getopt_long (argc, argv, "s:c:hv", long_options, &option_index)) >= 0) {
 		switch (c) {
 		case 's':
@@ -171,14 +166,14 @@ main (int argc, char *argv[])
 		fprintf(stderr, "Option --config is mandatory\n");
 		return 1;
 	}
-	cfg = read_cfg(config_fname);
+	globals->cfg = read_cfg(config_fname);
 
 	/* Open a client connection to the JACK server.  Starting a
 	 * new server only to list its ports seems pointless, so we
 	 * specify JackNoStartServer. */
 
-	client = jack_client_open (CLIENT_NAME, options, &status, server_name);
-	if (client == NULL) {
+	globals->client = jack_client_open (CLIENT_NAME, options, &status, server_name);
+	if (globals->client == NULL) {
 		if (status & JackServerFailed) {
 			fprintf (stderr, "JACK server not running\n");
 		} else {
@@ -189,36 +184,45 @@ main (int argc, char *argv[])
 	}
 
 	show_ports();
-	to_connect = NULL;
+	globals->to_connect = NULL;
 	int errorcode;
-	errorcode = jack_set_port_registration_callback(client, on_port_reg, NULL);
+	errorcode = jack_set_port_registration_callback(globals->client, on_port_reg, NULL);
 	if(errorcode != 0) {
 		fprintf(stderr, "Error on port registration CB: %d\n", errorcode);
 		return 1;
 	}
-	errorcode = jack_activate(client);
+	errorcode = jack_activate(globals->client);
 	if(errorcode != 0) {
 		fprintf(stderr, "Error activating: %d\n", errorcode);
 		return 1;
 	}
 
 
+	event_loop();
+	jack_client_close(globals->client);
+	free(globals->cfg);
+	exit (0);
+}
+
+static void event_loop() {
+	struct timespec sleep_spec;
 	sleep_spec.tv_sec = 0;
 	sleep_spec.tv_nsec = 1000*1000*10; /* 10 milliseconds = 0.01 second */
 	for(;;) {
-		if(to_connect == NULL) {
-			nanosleep(&sleep_spec, NULL);
-			continue;
-		}
-		fprintf(stderr, "Going to connect: [%s]\n", to_connect);
-		fflush(stderr);
-		do_port_action(to_connect);
-		free(to_connect);
-		to_connect = NULL;
+		worker();
+		nanosleep(&sleep_spec, NULL);
+		continue;
 	}
-	jack_client_close(client);
-	free(cfg);
-	exit (0);
+}
+
+static void worker() {
+	if(globals->to_connect == NULL)
+		return;
+	fprintf(stderr, "Going to connect: [%s]\n", globals->to_connect);
+	fflush(stderr);
+	do_port_action(globals->to_connect);
+	free(globals->to_connect);
+	globals->to_connect = NULL;
 }
 
 static void show_version (void)

@@ -30,4 +30,14 @@ Example:
 
 [1] http://www.hyperrealm.com/libconfig
 
+
+TODO
+-----
+
+* Make thread safe queue to pass messages from callbacks to worker
+* Reload config file on SIGHUP
+* Make rules.c with rule-port matching function
+
+
+
 vim: set et ts=4 sw=4:
