@@ -6,12 +6,13 @@ CC=gcc $(CCOPTS)
 ifeq ($(DEBUG),1)
 CCOPTS += -g
 endif
-SOURCES=jackiappo.c config_parse.c pipe.c
+SOURCES=jackiappo.c config_parse.c pipe.c rules.c
 OBJECTS=$(SOURCES:.c=.o)
 
 jackiappo: $(OBJECTS)
 	$(CC) -o $@ $^ `pkg-config --cflags --libs jack libconfig`
 
+rules.o: rules.c rules.h
 pipe.o: pipe.c pipe.h
 	$(CC) -c -o $@ $<
 

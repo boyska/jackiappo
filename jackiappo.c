@@ -25,8 +25,10 @@
 #include <getopt.h>
 #include <jack/jack.h>
 #include "jackiappo.h"
-#include "config_parse.h"
 #include "pipe.h"
+#include "config_parse.h"
+#include "rules.h"
+
 
 #define CLIENT_NAME "jackiappo"
 #define SHOW_ALIASES 0
@@ -38,48 +40,10 @@ struct passaround *globals;
 
 char *my_name;
 
-void do_port_action(const char *port_name) {
-	/* This function do what's needed */
-	int errorcode;
-	unsigned int rules_i;
-	char *from_varname, *to_varname;
-	const char* from_port, *to_port;
-	for(rules_i = 0;
-			rules_i <
-			config_setting_length(config_lookup(globals->cfg, "newports"));
-			rules_i++) {
-		asprintf(&from_varname, "newports.[%u].from.name", rules_i);
-		from_port = config_setting_get_string(config_lookup(globals->cfg, from_varname));
-		free(from_varname);
 
-		if(strcmp(from_port, port_name) == 0) {
-			/* Yay! connect */
-			asprintf(&to_varname, "newports.[%u].to.name", rules_i);
-			to_port = config_setting_get_string(config_lookup(globals->cfg, to_varname));
-			free(to_varname);
-
-			fprintf(stderr, "Connecting %s and %s\n", port_name, to_port);
-			fflush(stderr);
-			errorcode = jack_connect(globals->client, port_name, to_port);
-			if(errorcode) {
-				fprintf(stderr, "Error connecting: %d\n",
-						errorcode);
-				fflush(stderr);
-			}
-		}
-	}
-}
-
-void on_client_reg(const char *name, int registering, void *arg) {
-	if(!registering) {
-		fprintf(stdout, "client %s disconnecting\n", name);
-		return;
-	} else {
-		fprintf(stdout, "client %s connecting\n", name);
-	}
-	fflush(stdout);
-}
 void on_port_reg(jack_port_id_t port_id, int registering, void* producer) {
+	/* This function will be called in the callback thread */
+	/* Uses globals->client */
 	const char *name;
 	jack_port_t *port;
 	work work;
@@ -92,8 +56,6 @@ void on_port_reg(jack_port_id_t port_id, int registering, void* producer) {
 		work.args.newport.to_connect = calloc(strlen(name)+1, sizeof(char));
 		strncpy(work.args.newport.to_connect, name, strlen(name)+1);
 		pipe_push((pipe_producer_t*)producer, &work, 1);
-		fprintf(stderr, "To connect: [%s]\n", name);
-		fflush(stderr);
 	}
 }
 
@@ -221,7 +183,7 @@ static void event_loop(pipe_consumer_t* pipe_consumer) {
 
 static void worker(work work) {
 	if(work.type == WORK_NEWPORT) {
-		fprintf(stderr, "Going to connect: [%s]\n", work.args.newport.to_connect);
+		fprintf(stderr, "Considering port [%s]\n", work.args.newport.to_connect);
 		fflush(stderr);
 		do_port_action(work.args.newport.to_connect);
 		free(work.args.newport.to_connect);
@@ -229,6 +191,36 @@ static void worker(work work) {
 		fprintf(stderr, "Warning: invalid work type received: %X",
 				work.type);
 		fflush(stderr);
+	}
+}
+
+void do_port_action(const char *port_name) {
+	/* This function do what's needed */
+	int errorcode;
+	unsigned int rules_i;
+	const char* to_port;
+	config_setting_t *base, *to_rule, *rule;
+	
+	base = config_lookup(globals->cfg, "newports");
+	for(rules_i = 0; rules_i < config_setting_length(base); rules_i++) {
+		//TODO: get rules_i-th child of base
+		rule = config_setting_get_elem(base, rules_i);
+		to_rule = port_matches(rule, port_name);
+
+		if(to_rule != NULL) {
+			/* Yay! connect */
+			rule = config_setting_get_member(to_rule, "name");
+			to_port = config_setting_get_string(rule);
+
+			fprintf(stderr, "Connecting %s and %s\n", port_name, to_port);
+			fflush(stderr);
+			errorcode = jack_connect(globals->client, port_name, to_port);
+			if(errorcode) {
+				fprintf(stderr, "Error connecting: %d\n",
+						errorcode);
+				fflush(stderr);
+			}
+		}
 	}
 }
 

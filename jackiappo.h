@@ -8,6 +8,7 @@ static void event_loop();
 static void worker();
 static void show_version (void);
 static void show_usage (void);
+static void do_port_action(const char *port_name);
 
 /* These are work descriptions passed from callback thread back to main loop */
 enum work_type { WORK_NEWPORT };
