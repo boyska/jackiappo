@@ -60,10 +60,13 @@ config_t* read_cfg(char* filename) {
 		fprintf(stderr, "%s:%d - %s\n", config_error_file(cfg),
 				config_error_line(cfg), config_error_text(cfg));
 		config_destroy(cfg);
+		free(cfg);
 		return NULL;
 	}
 
 	if(!is_valid_conf(cfg)) {
+		config_destroy(cfg);
+		free(cfg);
 		return NULL;
 	}
 	return cfg;

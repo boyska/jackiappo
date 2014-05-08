@@ -1,13 +1,19 @@
 binaries=jackiappo metro
 all: $(binaries)
 
-CCOPTS=-Wall -ansi
+CCOPTS=-Wall -std=c99 -pedantic
 CC=gcc $(CCOPTS)
-SOURCES=jackiappo.c config_parse.c
+ifeq ($(DEBUG),1)
+CCOPTS += -g
+endif
+SOURCES=jackiappo.c config_parse.c pipe.c
 OBJECTS=$(SOURCES:.c=.o)
 
 jackiappo: $(OBJECTS)
 	$(CC) -o $@ $^ `pkg-config --cflags --libs jack libconfig`
+
+pipe.o: pipe.c pipe.h
+	$(CC) -c -o $@ $<
 
 jackiappo.o: jackiappo.c jackiappo.h
 	$(CC) -c -o $@ `pkg-config --cflags --libs jack` $<

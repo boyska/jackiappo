@@ -26,16 +26,16 @@
 #include <jack/jack.h>
 #include "jackiappo.h"
 #include "config_parse.h"
+#include "pipe.h"
 
-#ifndef CLIENT_NAME
 #define CLIENT_NAME "jackiappo"
-#endif
 #define SHOW_ALIASES 0
 #define SHOW_CON 0
-
-struct passaround *globals;
+#define SLEEP_MICROSECONDS 10000
 
 /* Yes, there are so much globals. Me suck. So what? */
+struct passaround *globals;
+
 char *my_name;
 
 void do_port_action(const char *port_name) {
@@ -79,37 +79,24 @@ void on_client_reg(const char *name, int registering, void *arg) {
 	}
 	fflush(stdout);
 }
-void on_port_reg(jack_port_id_t port_id, int registering, void *arg) {
-	/* On Jack Port Registered: show_port */
+void on_port_reg(jack_port_id_t port_id, int registering, void* producer) {
 	const char *name;
 	jack_port_t *port;
+	work work;
 	if(!registering) {
 		return;
 	} else {
 		port = jack_port_by_id(globals->client, port_id);
 		name = jack_port_name(port);
-		globals->to_connect = calloc(strlen(name)+1, sizeof(char));
-		strncpy(globals->to_connect, name, strlen(name)+1);
-		fprintf(stderr, "To connect: [%s]\n", globals->to_connect);
+		work.type = WORK_NEWPORT;
+		work.args.newport.to_connect = calloc(strlen(name)+1, sizeof(char));
+		strncpy(work.args.newport.to_connect, name, strlen(name)+1);
+		pipe_push((pipe_producer_t*)producer, &work, 1);
+		fprintf(stderr, "To connect: [%s]\n", name);
 		fflush(stderr);
 	}
 }
 
-void show_ports() {
-	const char **ports;
-	int i;
-	ports = jack_get_ports (globals->client, NULL, NULL, 0);
-	if (!ports)
-		return;
-
-	for (i = 0; ports && ports[i]; ++i) {
-
-		printf ("%s\n", ports[i]);
-
-	} /* end for on ports */
-	if (ports)
-		jack_free (ports);
-}
 
 int
 main (int argc, char *argv[])
@@ -120,6 +107,9 @@ main (int argc, char *argv[])
 	int option_index;
 	char *server_name = NULL;
 	char *config_fname = NULL;
+	pipe_t *pipe;
+	pipe_producer_t* pipe_producer;
+	pipe_consumer_t* pipe_consumer;
 
 	struct option long_options[] = {
 	    { "server", 1, 0, 's' },
@@ -145,8 +135,8 @@ main (int argc, char *argv[])
 			options |= JackServerName;
 			break;
 		case 'c':
-			config_fname = (char *) malloc (sizeof (char) * strlen(optarg));
-			strcpy (config_fname, optarg);
+			config_fname = (char *)malloc (sizeof (char) * strlen(optarg));
+			strncpy (config_fname, optarg, strlen(optarg));
 			break;
 		case 'h':
 			show_usage ();
@@ -167,12 +157,14 @@ main (int argc, char *argv[])
 		return 1;
 	}
 	globals->cfg = read_cfg(config_fname);
+	free(config_fname);
 
 	/* Open a client connection to the JACK server.  Starting a
 	 * new server only to list its ports seems pointless, so we
 	 * specify JackNoStartServer. */
 
-	globals->client = jack_client_open (CLIENT_NAME, options, &status, server_name);
+	globals->client = jack_client_open(CLIENT_NAME, options, &status, server_name);
+	free(server_name);
 	if (globals->client == NULL) {
 		if (status & JackServerFailed) {
 			fprintf (stderr, "JACK server not running\n");
@@ -183,10 +175,13 @@ main (int argc, char *argv[])
 		return 1;
 	}
 
-	show_ports();
-	globals->to_connect = NULL;
+	pipe = pipe_new(sizeof(work), 0);
+	pipe_producer = pipe_producer_new(pipe);
+	pipe_consumer = pipe_consumer_new(pipe);
+	pipe_free(pipe);
 	int errorcode;
-	errorcode = jack_set_port_registration_callback(globals->client, on_port_reg, NULL);
+	errorcode = jack_set_port_registration_callback(globals->client,
+			on_port_reg, (void*)pipe_producer);
 	if(errorcode != 0) {
 		fprintf(stderr, "Error on port registration CB: %d\n", errorcode);
 		return 1;
@@ -198,31 +193,43 @@ main (int argc, char *argv[])
 	}
 
 
-	event_loop();
+	event_loop(pipe_consumer);
 	jack_client_close(globals->client);
 	free(globals->cfg);
-	exit (0);
+	pipe_producer_free(pipe_producer);
+	return 0;
 }
 
-static void event_loop() {
+static void event_loop(pipe_consumer_t* pipe_consumer) {
 	struct timespec sleep_spec;
+	work work;
+	size_t popresult;
+
 	sleep_spec.tv_sec = 0;
-	sleep_spec.tv_nsec = 1000*1000*10; /* 10 milliseconds = 0.01 second */
+	sleep_spec.tv_nsec = 1000 * SLEEP_MICROSECONDS; /* 10 milliseconds = 0.01 second */
 	for(;;) {
-		worker();
+		popresult = pipe_pop(pipe_consumer, &work, (size_t)1);
+		if(popresult != 1) {
+		fprintf(stderr, "Warning: pop returned %zu elements",
+				popresult);
+		}
+		worker(work);
 		nanosleep(&sleep_spec, NULL);
-		continue;
 	}
+	pipe_consumer_free(pipe_consumer);
 }
 
-static void worker() {
-	if(globals->to_connect == NULL)
-		return;
-	fprintf(stderr, "Going to connect: [%s]\n", globals->to_connect);
-	fflush(stderr);
-	do_port_action(globals->to_connect);
-	free(globals->to_connect);
-	globals->to_connect = NULL;
+static void worker(work work) {
+	if(work.type == WORK_NEWPORT) {
+		fprintf(stderr, "Going to connect: [%s]\n", work.args.newport.to_connect);
+		fflush(stderr);
+		do_port_action(work.args.newport.to_connect);
+		free(work.args.newport.to_connect);
+	} else {
+		fprintf(stderr, "Warning: invalid work type received: %X",
+				work.type);
+		fflush(stderr);
+	}
 }
 
 static void show_version (void)
