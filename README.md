@@ -16,6 +16,9 @@ Build
 ------
 
 Just run `make` and you're done.
+It depends on jack (obviously) and
+[libconfig](http://www.hyperrealm.com/libconfig/)
+
 
 Run
 ----
@@ -54,6 +57,7 @@ TODO
 -----
 
 * Reload config file on SIGHUP
+* Use globals ONLY from main thread
 
 
 
