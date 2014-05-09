@@ -34,6 +34,7 @@
 #define SHOW_ALIASES 0
 #define SHOW_CON 0
 #define SLEEP_MICROSECONDS 10000
+#define JACKIAPPO_VERSION "0.1"
 
 /* Yes, there are so much globals. Me suck. So what? */
 struct passaround *globals;
@@ -102,11 +103,11 @@ main (int argc, char *argv[])
 			break;
 		case 'h':
 			show_usage ();
-			return 1;
+			return 0;
 			break;
 		case 'v':
 			show_version ();
-			return 1;
+			return 0;
 			break;
 		default:
 			show_usage ();
@@ -226,16 +227,17 @@ void do_port_action(const char *port_name) {
 
 static void show_version (void)
 {
+	fprintf(stdout, "Jackiappo version %s\n", JACKIAPPO_VERSION);
 }
 
 static void show_usage (void) {
 	show_version ();
-	fprintf (stderr, "\nUsage: %s [options] [filter string]\n", my_name);
-	fprintf (stderr, "List active Jack ports, and optionally display extra information.\n");
-	fprintf (stderr, "Optionally filter ports which match ALL strings provided after any options.\n\n");
-	fprintf (stderr, "Display options:\n");
-	fprintf (stderr, "        -s, --server <name>   Connect to the jack server named <name>\n");
-	fprintf (stderr, "        -h, --help            Display this help message\n");
-	fprintf (stderr, "        --version             Output version information and exit\n\n");
-	fprintf (stderr, "For more information see http://jackaudio.org/\n");
+	fprintf(stdout, "\nUsage: %s [options] [filter string]\n", my_name);
+	fprintf(stdout, "Handle jack events, connecting new ports to other ones.\n");
+	fprintf(stdout, "options:\n");
+	fprintf(stdout, "        -s, --server <name>       Connect to the jack server named <name>\n");
+	fprintf(stdout, "        -c, --config <filename>   Read config from <filename>. This is mandatory\n");
+	fprintf(stdout, "        -h, --help                Display this help message\n");
+	fprintf(stdout, "        --version                 Output version information and exit\n\n");
+	fprintf(stdout, "For more information see http://jackaudio.org/\n");
 }

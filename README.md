@@ -1,8 +1,28 @@
 JACKIAPPO
 =========
 
-* Watch for new ports and make new connections as soon as they are available
-* According to a simple file
+jackiappo watches jack events and reacts to them. By now, it watches for new
+ports and connects to them.
+
+Use cases
+-----------
+
+Some jack clients are hardly configurable, which means that one must manually
+connect them to desired output ports. Using jackiappo, this is all done
+automatically.
+
+
+Build
+------
+
+Just run `make` and you're done.
+
+Run
+----
+
+```sh
+./jackiappo -c config.cfg
+```
 
 File format
 -----------
@@ -30,13 +50,10 @@ Example:
 
 [1] http://www.hyperrealm.com/libconfig
 
-
 TODO
 -----
 
-* Make thread safe queue to pass messages from callbacks to worker
 * Reload config file on SIGHUP
-* Make rules.c with rule-port matching function
 
 
 
